@@ -95,11 +95,11 @@ unsigned char *base64_encode(unsigned char *str);
 static void *create(void *arg);
 static void *createEx(void *arg);
 void *createSHM(key_t key, int *id);
-TLVEx *GetTLVFromSHM(key_t key);
+TLVEx GetTLVFromSHM(key_t key);
 void NormalShareMemory();
 void *createSHMDefault(key_t key, int *id);
-SHMI *OpenSHMDefault(key_t key);
-TLVEx *GetCtx();
+SHMI OpenSHMDefault(key_t key);
+TLVEx GetCtx();
 
 static void *create(void *arg)
 {
@@ -330,7 +330,7 @@ char *getJsonData(const char *jsonFile, int *jsonLen)
 	return json;
 }
 
-SHMI *OpenSHMDefault(key_t key)
+SHMI OpenSHMDefault(key_t key)
 {
 	int ret;
 	SHMI shmi;
@@ -338,7 +338,7 @@ SHMI *OpenSHMDefault(key_t key)
 
 	/*创建共享内存*/
 	int size = sizeof(SHMI);
-	int shmid = shmget(key, size, IPC_CREAT);
+	int shmid = shmget(key, size, IPC_CREAT|0600);
 	if (shmid < 0)
 	{
 		perror("shmget");
@@ -355,13 +355,21 @@ SHMI *OpenSHMDefault(key_t key)
 	else
 	{
 		printf("shmctl() call failed.\n");
-		return NULL;
+		return shmi;
 	}
 	/*映射*/
 	shmadd = shmat(shmid, NULL, 0);
 	memcpy(&shmi, shmadd, size);
 
-	return &shmi;
+	printf("Count:%d\r\n",shmi.count);
+	for (size_t i = 0; i < shmi.count; i++)
+	{
+		/* code */
+		printf("key:%d\r\n",shmi.key[i]);
+	}
+	
+
+	return shmi;
 }
 
 void *createSHMDefault(key_t key, int *id)
@@ -574,7 +582,7 @@ unsigned char *base64_decode(unsigned char *code, int *datalen)
 	return res;
 }
 
-TLVEx *GetTLVFromSHM(key_t key)
+TLVEx GetTLVFromSHM(key_t key)
 {
 
 	TLVEx tlvex;
@@ -589,7 +597,8 @@ TLVEx *GetTLVFromSHM(key_t key)
         perror("ftok");
     }*/
 	/*创建共享内存*/
-	shmid = shmget(key, 0, 600);
+	int Size = sizeof(TLVEx);
+	shmid = shmget(key, 0, IPC_CREAT|0600);
 	if (shmid < 0)
 	{
 		perror("shmget");
@@ -615,38 +624,35 @@ TLVEx *GetTLVFromSHM(key_t key)
 
 	unsigned char *data = (unsigned char *)malloc(tlvex.len);
 
+
 	memcpy(data, tlvex.Value, tlvex.len);
+	printf("data:%s\n",data);
 	int len = 0;
-	unsigned char *deData = base64_decode(data, len);
+	unsigned char *deData = base64_decode(data, &len);
+	printf("dedata:%s\n",deData);
 	memset(tlvex.Value, 0x00, MAX_CONTENT_LEN);
 	memcpy(tlvex.Value, deData, len);
 	tlvex.len = len;
 	free(data);
 
-	return &tlvex;
+	return tlvex;
 }
-TLVEx *GetCtx()
+TLVEx GetCtx()
 {
-	TLVEx *tlvex = NULL;
-	SHMI *shmi = OpenSHMDefault(999999);
-	if (NULL == shmi)
-	{
-		return NULL;
-	}
-	for (size_t i = 0; i < shmi->count; i++)
+	TLVEx tlvex;
+	SHMI shmi = OpenSHMDefault(999999);
+
+	for (size_t i = 0; i < shmi.count; i++)
 	{
 
 		/* code */
-		key_t k = shmi->key[i];
-		printf("key:%ld\r\n", k);
+		key_t k = shmi.key[i];
+		printf("key:%d\r\n", k);
 		tlvex = GetTLVFromSHM(k);
-		if (NULL != tlvex)
-		{
-			break;
-		}
+		
 	}
 
-	tlvex;
+	return tlvex;
 }
 
 
@@ -671,7 +677,7 @@ int main(int argc, char *argv[])
 	free(buf);
 	return;
 #endif
-	PTLVEX p = GetCtx();
+	GetCtx();
 
 	return;
 #ifdef TEST_SHMI
