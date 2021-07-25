@@ -336,7 +336,7 @@ SHMI *OpenSHMDefault(key_t key)
 
 	/*创建共享内存*/
 	int size = sizeof(SHMI);
-	int shmid = shmget(key, size, IPC_CREAT | 0600);
+	int shmid = shmget(key, size, IPC_CREAT);
 	if (shmid < 0)
 	{
 		perror("shmget");
