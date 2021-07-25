@@ -87,17 +87,19 @@ typedef struct SHMInfo
 	unsigned long long count;
 	key_t key[200];
 } SHMI, *PSHMI;
-TLVEx *GetCtx();
-// unsigned char *base64_encode(unsigned char *str);
-// unsigned char *bae64_decode(unsigned char *code,int *datalen);
+
+
+unsigned char *base64_decode(unsigned char *code, int *datalen);
+unsigned char *base64_encode(unsigned char *str);
+
 static void *create(void *arg);
 static void *createEx(void *arg);
-void *createSHM(key_t key,int *id);
-TLVEx * GetTLVFromSHM(key_t key);
+void *createSHM(key_t key, int *id);
+TLVEx *GetTLVFromSHM(key_t key);
 void NormalShareMemory();
 void *createSHMDefault(key_t key, int *id);
 SHMI *OpenSHMDefault(key_t key);
-
+TLVEx *GetCtx();
 
 static void *create(void *arg)
 {
@@ -396,67 +398,6 @@ void *createSHMDefault(key_t key, int *id)
 
 	return shmadd;
 }
-#define TEST_SHMI
-int main(int argc, char *argv[])
-{
-	PTLVEX p = GetCtx();
-
-	return;
-#ifdef TEST_SHMI
-	int id = 0;
-	void *shmadd = createSHMDefault(999999, &id);
-	printf("shmid:%d\n", id);
-
-	printf("sizeof:shmi:%ld\n", sizeof(SHMI));
-	SHMI shmi;
-	shmi.max_topic_len = TOPIC_LEN;
-	shmi.max_content_len = MAX_CONTENT_LEN;
-	shmi.max_shm_size = MAX_SHARE_MEM_SIZE;
-	shmi.count = MAX_THREAD_NUM;
-#endif //
-
-	printf("share memory\n");
-	for (int j = 0; j < MAX_THREAD_NUM; j++)
-	{
-		THParam *tp = (THParam *)malloc(sizeof(THParam));
-		tp->key = 202107 + j;
-#ifdef TEST_SHMI
-		shmi.key[j] = 202107 + j;
-#endif //
-		sprintf(tp->topic, "kill_kafa_%d", j + 1);
-		sprintf(tp->jsonPath, "./example.json", j + 1);
-		tp->writeOffSet = sizeof(Head);
-
-		int len = 0;
-		tp->json = getJsonData(tp->jsonPath, &len);
-		tp->jsonlen = len;
-
-		int id = 0;
-		tp->shmadd = createSHM(tp->key, &id);
-		printf("id = %d, len:%d", id, len);
-		tp->id = id;
-		tp->Tag = 0;
-		pthread_t tidp;
-		int error;
-		void *tret;
-		error = pthread_create(&tidps[j], NULL, create, (void *)tp);
-	}
-#ifdef TEST_SHMI
-	memcpy(shmadd, &shmi, sizeof(SHMI));
-#endif //
-	for (int k = 0; k < MAX_THREAD_NUM; k++)
-	{
-		void *tret;
-		pthread_join(tidps[k], &tret);
-		printf("pid:%ld\n", tidps[k]);
-	}
-
-	while (1)
-	{
-		printf("running ....\n");
-	}
-	return 1;
-}
 
 void NormalShareMemory()
 {
@@ -588,7 +529,8 @@ unsigned char *base64_encode(unsigned char *str)
 	return res;
 }
 
-unsigned char *base64_decode(unsigned char *code, int *datalen){
+unsigned char *base64_decode(unsigned char *code, int *datalen)
+{
 	//根据base64表，以字符找到对应的十进制数据
 	int table[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -647,7 +589,7 @@ TLVEx *GetTLVFromSHM(key_t key)
         perror("ftok");
     }*/
 	/*创建共享内存*/
-	shmid = shmget(key, 0, 600 );
+	shmid = shmget(key, 0, 600);
 	if (shmid < 0)
 	{
 		perror("shmget");
@@ -687,16 +629,16 @@ TLVEx *GetCtx()
 {
 	TLVEx *tlvex = NULL;
 	SHMI *shmi = OpenSHMDefault(999999);
-	if(NULL == shmi)
+	if (NULL == shmi)
 	{
-	    return NULL;
+		return NULL;
 	}
 	for (size_t i = 0; i < shmi->count; i++)
 	{
 
 		/* code */
 		key_t k = shmi->key[i];
-		printf("key:%ld\r\n",k);
+		printf("key:%ld\r\n", k);
 		tlvex = GetTLVFromSHM(k);
 		if (NULL != tlvex)
 		{
@@ -705,4 +647,85 @@ TLVEx *GetCtx()
 	}
 
 	tlvex;
+}
+
+
+#define TEST_SHMI
+//#define TEST_BASE64
+int main(int argc, char *argv[])
+{
+#ifdef TEST_BASE64
+	unsigned char *buf = NULL;
+	if (strcmp(argv[1], "-d") == 0)
+	{
+		int len =0;
+		buf = base64_decode(argv[2],&len);
+		printf("len%d,%s\n",len, buf);
+	}
+	else
+	{
+		buf = base64_encode(argv[1]);
+		printf("%s\n", buf);
+	}
+
+	free(buf);
+	return;
+#endif
+	PTLVEX p = GetCtx();
+
+	return;
+#ifdef TEST_SHMI
+	int id = 0;
+	void *shmadd = createSHMDefault(999999, &id);
+	printf("shmid:%d\n", id);
+
+	printf("sizeof:shmi:%ld\n", sizeof(SHMI));
+	SHMI shmi;
+	shmi.max_topic_len = TOPIC_LEN;
+	shmi.max_content_len = MAX_CONTENT_LEN;
+	shmi.max_shm_size = MAX_SHARE_MEM_SIZE;
+	shmi.count = MAX_THREAD_NUM;
+#endif //
+
+	printf("share memory\n");
+	for (int j = 0; j < MAX_THREAD_NUM; j++)
+	{
+		THParam *tp = (THParam *)malloc(sizeof(THParam));
+		tp->key = 202107 + j;
+#ifdef TEST_SHMI
+		shmi.key[j] = 202107 + j;
+#endif //
+		sprintf(tp->topic, "kill_kafa_%d", j + 1);
+		sprintf(tp->jsonPath, "./example.json", j + 1);
+		tp->writeOffSet = sizeof(Head);
+
+		int len = 0;
+		tp->json = getJsonData(tp->jsonPath, &len);
+		tp->jsonlen = len;
+
+		int id = 0;
+		tp->shmadd = createSHM(tp->key, &id);
+		printf("id = %d, len:%d", id, len);
+		tp->id = id;
+		tp->Tag = 0;
+		pthread_t tidp;
+		int error;
+		void *tret;
+		error = pthread_create(&tidps[j], NULL, create, (void *)tp);
+	}
+#ifdef TEST_SHMI
+	memcpy(shmadd, &shmi, sizeof(SHMI));
+#endif //
+	for (int k = 0; k < MAX_THREAD_NUM; k++)
+	{
+		void *tret;
+		pthread_join(tidps[k], &tret);
+		printf("pid:%ld\n", tidps[k]);
+	}
+
+	while (1)
+	{
+		printf("running ....\n");
+	}
+	return 1;
 }
