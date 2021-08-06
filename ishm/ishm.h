@@ -14,6 +14,7 @@ void *sysv_shm_attach(int shm_id);
 int sysv_shm_detach(void *addr);
 int sysv_shm_write(int shm_id, void* input, int len, int offset);
 int sysv_shm_read(int shm_id, void* output, int len, int offset);
+int sysv_shm_read_without_attach(void* addr, void* output, int len, int offset);
 size_t sysv_shm_get_size(int shm_id);
 int sysv_shm_lock(int shm_id);
 int sysv_shm_unlock(int shm_id);

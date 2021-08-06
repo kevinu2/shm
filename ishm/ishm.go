@@ -28,6 +28,7 @@ type Segment struct {
 	Id     int64
 	Size   int64
 	offset int64
+	addr   unsafe.Pointer
 }
 
 // Create a new shared memory segment with the given size (in bytes).  The system will automatically
@@ -108,6 +109,21 @@ func (s *Segment) ReadChunk(length int64, start int64) ([]byte, error) {
 	defer C.free(buffer)
 
 	if _, err := C.sysv_shm_read(C.int(s.Id), buffer, C.int(length), C.int(start)); err != nil {
+		return nil, err
+	}
+
+	return C.GoBytes(buffer, C.int(length)), nil
+}
+
+func (s *Segment) ReadChunkWithoutAttach(length int64, start int64) ([]byte, error) {
+	if length < 0 {
+		length = s.Size
+	}
+
+	buffer := C.malloc(C.size_t(length))
+	defer C.free(buffer)
+
+	if _, err := C.sysv_shm_read_without_attach(s.addr, buffer, C.int(length), C.int(start)); err != nil {
 		return nil, err
 	}
 
@@ -258,17 +274,28 @@ func (s *Segment) Position() int64 {
 //
 func (s *Segment) Attach() (unsafe.Pointer, error) {
 	if addr, err := C.sysv_shm_attach(C.int(s.Id)); err == nil {
+		s.addr = unsafe.Pointer(addr)
 		return unsafe.Pointer(addr), nil
 	} else {
 		return nil, err
 	}
 }
 
+func (s *Segment) IsAttached() bool{
+	return s.addr != nil
+}
+
 // Detaches the segment from the current processes memory space.
 //
-func (s *Segment) Detach(addr unsafe.Pointer) error {
-	_, err := C.sysv_shm_detach(addr)
-	return err
+func (s *Segment) Detach(/*addr unsafe.Pointer*/) error {
+	if s.addr != nil{
+		_, err := C.sysv_shm_detach(s.addr)
+		s.addr = nil
+		return err
+	}
+	return nil
+	//_, err := C.sysv_shm_detach(addr)
+	//return err
 }
 
 // Destroys the current shared memory segment.

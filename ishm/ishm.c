@@ -75,6 +75,26 @@ int sysv_shm_read(int shm_id, void* output, int len, int offset) {
     return 0;
 }
 
+int sysv_shm_read_without_attach(void* addr, void* output, int len, int offset) {
+    // attach to the given segment to get its memory address
+    /*char* addr = sysv_shm_attach(shm_id);
+
+    if(addr == (void*)(-1)){
+        return -1;
+    }*/
+    if(addr == NULL || addr == (void*)(-1) || output == NULL){
+        return -1;
+    }
+
+    // copy len bytes from addr into output
+    memcpy(output, addr+offset, len);
+
+    // detach
+    //sysv_shm_detach(addr);
+
+    return 0;
+}
+
 int sysv_shm_lock(int shm_id) {
     return shmctl(shm_id, SHM_LOCK, NULL);
 }

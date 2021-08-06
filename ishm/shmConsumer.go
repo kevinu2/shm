@@ -17,6 +17,7 @@ const (
 	ShmConsumerLenErr  ShmConsumerStatus = 2
 	ShmConsumerInitErr ShmConsumerStatus = 3
 	ShmConsumerNoData  ShmConsumerStatus = 4
+	ShmConsumerUnAttached ShmConsumerStatus = 5
 )
 
 //after//shmi, err := shmdata.GetShareMemoryInfo(999999)
@@ -33,6 +34,7 @@ type Consumer struct {
 	ShmKey        int64
 	IsRunning     bool
 	sm            *Segment
+	readCnt       uint64
 }
 
 func (consumer *Consumer) Init(key int64, maxSHMSize uint64, maxContentLen uint64) bool {
@@ -67,7 +69,26 @@ func (consumer *Consumer) Next() (*TagTLV, ShmConsumerStatus) {
 	if consumer.sm == nil {
 		return nil, ShmConsumerInitErr
 	}
-	od, err := consumer.sm.ReadChunk(16, int64(consumer.CurOffset))
+	if consumer.sm.IsAttached(){
+		if consumer.readCnt >= 10000{
+			consumer.sm.Detach()
+			_,err := consumer.sm.Attach()
+			if err != nil{
+				fmt.Println(err)
+				return nil, ShmConsumerUnAttached
+			}
+			consumer.readCnt = 0
+		}
+	}else{
+		_,err := consumer.sm.Attach()
+		if err != nil{
+			fmt.Println(err)
+			return nil, ShmConsumerUnAttached
+		}
+		consumer.readCnt = 0
+	}
+	consumer.readCnt += 1
+	od, err := consumer.sm.ReadChunkWithoutAttach(16, int64(consumer.CurOffset))
 	if err != nil {
 		return nil, ShmConsumerReadErr
 	}
@@ -80,7 +101,7 @@ func (consumer *Consumer) Next() (*TagTLV, ShmConsumerStatus) {
 		if (tll.Tag > consumer.PreTag) || (tll.Tag == 0 && consumer.PreTag == 18446744073709551615 || consumer.PreTag == 0) {
 			//copySize := int64(unsafe.Sizeof(tl)) + int64(64) + int64(tll.Len)
 			copySize := int64(16) + int64(64) + int64(tll.Len)
-			od, err = consumer.sm.ReadChunk(copySize, int64(consumer.CurOffset))
+			od, err = consumer.sm.ReadChunkWithoutAttach(copySize, int64(consumer.CurOffset))
 			consumer.PreTag = tll.Tag
 			consumer.PreOffset = consumer.CurOffset
 			consumer.CurOffset += consumer.SegLen
@@ -96,7 +117,7 @@ func (consumer *Consumer) Next() (*TagTLV, ShmConsumerStatus) {
 	} else {
 		if consumer.CurOffset != 16 {
 			//od, err := consumer.sm.ReadChunk(int64(unsafe.Sizeof(tl)), int64(consumer.CurOffset))
-			od, err := consumer.sm.ReadChunk(int64(16), int64(consumer.CurOffset))
+			od, err := consumer.sm.ReadChunkWithoutAttach(int64(16), int64(consumer.CurOffset))
 			if err != nil {
 				//log.Fatal(err)
 				return nil, ShmConsumerReadErr
@@ -109,7 +130,7 @@ func (consumer *Consumer) Next() (*TagTLV, ShmConsumerStatus) {
 				fmt.Printf("Worker-%v new cycle headtag-%v\n", consumer.ShmKey, headTll.Tag)
 				//copySize := int64(unsafe.Sizeof(tl)) + int64(64) + int64(headTll.Len)
 				copySize := int64(16) + int64(64) + int64(headTll.Len)
-				od, err = consumer.sm.ReadChunk(copySize, 16)
+				od, err = consumer.sm.ReadChunkWithoutAttach(copySize, 16)
 				consumer.PreTag = headTll.Tag
 				consumer.CurOffset = consumer.SegLen + 16
 				consumer.IsRunning = true
