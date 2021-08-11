@@ -1,6 +1,7 @@
 package ishm
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -22,7 +23,7 @@ const (
 
 //after//shmi, err := shmdata.GetShareMemoryInfo(999999)
 
-type Consumer struct {
+type ShmDataBlockConsumer struct {
 	PreTag        uint64
 	CurTag        uint64
 	TopicLen      uint64
@@ -35,17 +36,20 @@ type Consumer struct {
 	IsRunning     bool
 	sm            *Segment
 	readCnt       uint64
+	handler ConsumerHandler
+	cmdChannel  chan ShmCommand
+	stopChannel chan bool
 }
 
-func (consumer *Consumer) Init(key int64, maxSHMSize uint64, maxContentLen uint64) bool {
+func (consumer *ShmDataBlockConsumer) Init(key int64, maxSHMSize uint64, maxContentLen uint64, handler ConsumerHandler) (bool, error) {
 	consumer.ShmKey = key
-	if !HasKeyofSHM(key) {
+	/*if !HasKeyofSHM(key) {
 		return false
-	}
+	}*/
 	sm, err := CreateWithKey(key, 0)
 	if err != nil {
 		fmt.Printf("Init consume err key-%v\n\n", key)
-		return false
+		return false, err
 	}
 	consumer.MaxShmSize = maxSHMSize
 	consumer.MaxContentLen = maxContentLen
@@ -53,17 +57,64 @@ func (consumer *Consumer) Init(key int64, maxSHMSize uint64, maxContentLen uint6
 	consumer.CurOffset = 16
 	consumer.sm = sm
 	consumer.IsRunning = false
-	return true
+	consumer.handler = handler
+	consumer.stopChannel = make(chan bool, 32)
+	return true, nil
 }
 
-func (consumer *Consumer) Reset() {
+func (consumer *ShmDataBlockConsumer) GetCmdChannel() chan ShmCommand {
+	return consumer.cmdChannel
+}
+
+func (consumer *ShmDataBlockConsumer) Reset() {
 	consumer.CurOffset = 16
 	consumer.PreTag = 0
 	consumer.CurTag = 0
 	consumer.IsRunning = false
 }
 
-func (consumer *Consumer) Next() (*TagTLV, ShmConsumerStatus) {
+func (consumer *ShmDataBlockConsumer) Start() bool{
+	var noDataCnt int32
+	noDataCnt = 0
+	go func() {
+		for{
+			select{
+			case <-consumer.stopChannel:
+				consumer.sm.Detach()
+				return
+			default:
+
+			}
+			tlv,status := consumer.Next()
+			switch status {
+			case ShmConsumerOk:
+				if consumer.handler != nil{
+					topic := string(tlv.Topic[:tlv.TopicLen])
+					eventType := string(tlv.EventType[:tlv.EventTypeLen])
+					consumer.handler.OnMessage(topic, eventType, tlv.Value[:tlv.Len])
+				}
+				noDataCnt = 0
+			case ShmConsumerReadErr, ShmConsumerLenErr:
+				consumer.Reset()
+			case ShmConsumerNoData:
+				noDataCnt += 1
+				if noDataCnt%1000 == 0 {
+					time.Sleep(time.Millisecond)
+					noDataCnt = 0
+				}
+			default:
+
+			}
+		}
+	}()
+	return true
+}
+
+func (consumer *ShmDataBlockConsumer) Close(){
+	consumer.stopChannel <- true
+}
+
+func (consumer *ShmDataBlockConsumer) Next() (*TagTLV, ShmConsumerStatus) {
 	//tl := shmdata.TagTL{}
 	//od, err := consumer.sm.ReadChunk(int64(unsafe.Sizeof(shmdata.TagTL)), int64(consumer.CurOffset))
 	if consumer.sm == nil {
@@ -106,7 +157,7 @@ func (consumer *Consumer) Next() (*TagTLV, ShmConsumerStatus) {
 			consumer.PreOffset = consumer.CurOffset
 			consumer.CurOffset += consumer.SegLen
 			if consumer.CurOffset+consumer.SegLen > consumer.MaxShmSize {
-				fmt.Printf("Worker-%v new cycle\n", consumer.ShmKey)
+				fmt.Printf("Shm data block-%v new cycle\n", consumer.ShmKey)
 				consumer.CurOffset = 16
 			}
 			consumer.IsRunning = true
@@ -143,7 +194,14 @@ func (consumer *Consumer) Next() (*TagTLV, ShmConsumerStatus) {
 	return nil, ShmConsumerNoData
 }
 
-func (consumer *Consumer) AutoNext() (*TagTLV, ShmConsumerStatus) {
+func (consumer *ShmDataBlockConsumer) Detach() error{
+	if consumer.sm == nil {
+		return errors.New("hello")
+	}
+	return consumer.sm.Detach()
+}
+
+func (consumer *ShmDataBlockConsumer) AutoNext() (*TagTLV, ShmConsumerStatus) {
 	//tl := shmdata.TagTL{}
 	//od, err := consumer.sm.ReadChunk(int64(unsafe.Sizeof(shmdata.TagTL)), int64(consumer.CurOffset))
 	//var tlv* TagTLV = nil
@@ -205,8 +263,9 @@ func StartSubscribe(key int64, callBack TLVCallBack) bool {
 	}
 	for i := 0; uint64(i) < shmi.Count; i++ {
 		go func() {
-			consumer := Consumer{}
-			if consumer.Init(int64(shmi.Key[i]), shmi.MaxSHMSize, shmi.MaxContentLen) {
+			consumer := ShmDataBlockConsumer{}
+			success,_ := consumer.Init(int64(shmi.Key[i]), shmi.MaxSHMSize, shmi.MaxContentLen, nil)
+			if success{
 				var noDataCnt int32
 				noDataCnt = 0
 				for {
@@ -220,7 +279,7 @@ func StartSubscribe(key int64, callBack TLVCallBack) bool {
 					case ShmConsumerLenErr:
 						consumer.Reset()
 					case ShmConsumerInitErr:
-						consumer.Init(int64(shmi.Key[i]), shmi.MaxSHMSize, shmi.MaxContentLen)
+						consumer.Init(int64(shmi.Key[i]), shmi.MaxSHMSize, shmi.MaxContentLen,nil)
 					case ShmConsumerNoData:
 						noDataCnt += 1
 						if noDataCnt%1000 == 0 {
