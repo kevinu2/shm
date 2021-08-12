@@ -5,6 +5,7 @@ import "C"
 import (
 	"bytes"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -76,7 +77,7 @@ func OpenSegment(size int64, flags SharedMemoryFlags, perms os.FileMode) (*Segme
 	return nil, err
 }
 func OpenSegmentWithKey(key, size int64, flags SharedMemoryFlags, perms os.FileMode) (*Segment, error) {
-	var err error
+	//var err error
 	if shmid, err := C.sysv_shm_open_with_key(C.int(key), C.int(size), C.int(flags), C.int(perms)); err == nil {
 		actualSize, err := C.sysv_shm_get_size(shmid)
 		if err != nil {
@@ -88,7 +89,7 @@ func OpenSegmentWithKey(key, size int64, flags SharedMemoryFlags, perms os.FileM
 			Size: int64(actualSize),
 		}, nil
 	}
-	return nil, err
+	return nil, errors.New(fmt.Sprintf("shm-%v is not exist", key))
 }
 
 // DestroySegment destroy a shared memory segment by its ID

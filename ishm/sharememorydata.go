@@ -187,7 +187,7 @@ func GetShareMemoryInfo(defaultKey int64,create bool) (*SHMInfo, error) {
 	sm, err := CreateWithKey(defaultKey, size)
 	if err != nil {
 		//log.Fatal(err)
-		sm.Destroy()
+		//sm.Destroy()
 		return nil, err
 	}
 	od, err := sm.ReadChunk(int64(unsafe.Sizeof(shmi)), 0)
